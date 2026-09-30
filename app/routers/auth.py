@@ -1,16 +1,44 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
 from app.database import get_db
 from app.models import User, Profile, UserRole
-from app.schemas import UserCreate, UserResponse, UserLogin, Token, ResetPasswordRequest, UpdatePasswordRequest
-from app.auth import get_password_hash, verify_password, create_access_token, get_current_user
+from app.schemas import (
+    UserCreate,
+    UserResponse,
+    UserLogin,
+    Token,
+    ResetPasswordRequest,
+    UpdatePasswordRequest,
+)
+from app.auth import (
+    get_password_hash,
+    verify_password,
+    create_access_token,
+    get_current_user,
+    get_current_user_for_password_reset,
+)
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+router = APIRouter(
+    prefix="/api/auth",
+    tags=["auth"]
+)
 
-@router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def signup(user_in: UserCreate, db: Session = Depends(get_db)):
-    # Verificar se o email ja existe
-    existing_user = db.query(User).filter(User.email == user_in.email).first()
+
+@router.post(
+    "/signup",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED
+)
+def signup(
+    user_in: UserCreate,
+    db: Session = Depends(get_db)
+):
+    # Verificar se o e-mail já existe
+    existing_user = db.query(User).filter(
+        User.email == user_in.email
+    ).first()
+
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -24,12 +52,14 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
             detail="Papel de usuário inválido. Escolha 'citizen' ou 'agent'."
         )
 
-    # Criar usuario
+    # Criar usuário
     hashed_password = get_password_hash(user_in.password)
+
     db_user = User(
         email=user_in.email,
         password_hash=hashed_password
     )
+
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -39,15 +69,16 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
         user_id=db_user.id,
         display_name=user_in.email.split("@")[0]
     )
+
     db.add(db_profile)
 
-    # Criar role do usuario
+    # Criar role do usuário
     db_role = UserRole(
         user_id=db_user.id,
         role=user_in.role
     )
-    db.add(db_role)
 
+    db.add(db_role)
     db.commit()
     db.refresh(db_user)
 
@@ -59,27 +90,52 @@ def signup(user_in: UserCreate, db: Session = Depends(get_db)):
         roles=[user_in.role],
         profile=db_profile
     )
+
     return response_user
 
-@router.post("/signin", response_model=Token)
-def signin(login_in: UserLogin, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == login_in.email).first()
-    if not user or not verify_password(login_in.password, user.password_hash):
+
+@router.post(
+    "/signin",
+    response_model=Token
+)
+def signin(
+    login_in: UserLogin,
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(
+        User.email == login_in.email
+    ).first()
+
+    if not user or not verify_password(
+        login_in.password,
+        user.password_hash
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="E-mail ou senha incorretos."
         )
 
-    # Obter a role do usuario
-    roles_db = db.query(UserRole).filter(UserRole.user_id == user.id).all()
-    roles = [r.role for r in roles_db]
+    # Obter a role do usuário
+    roles_db = db.query(UserRole).filter(
+        UserRole.user_id == user.id
+    ).all()
+
+    roles = [role.role for role in roles_db]
     primary_role = roles[0] if roles else "citizen"
 
     # Criar token de acesso
-    access_token = create_access_token(data={"sub": user.id, "email": user.email, "roles": roles})
+    access_token = create_access_token(
+        data={
+            "sub": user.id,
+            "email": user.email,
+            "roles": roles
+        }
+    )
 
     # Buscar perfil
-    profile_db = db.query(Profile).filter(Profile.user_id == user.id).first()
+    profile_db = db.query(Profile).filter(
+        Profile.user_id == user.id
+    ).first()
 
     user_resp = UserResponse(
         id=user.id,
@@ -96,12 +152,24 @@ def signin(login_in: UserLogin, db: Session = Depends(get_db)):
         user=user_resp
     )
 
-@router.get("/me", response_model=UserResponse)
-def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    roles_db = db.query(UserRole).filter(UserRole.user_id == current_user.id).all()
-    roles = [r.role for r in roles_db]
-    
-    profile_db = db.query(Profile).filter(Profile.user_id == current_user.id).first()
+
+@router.get(
+    "/me",
+    response_model=UserResponse
+)
+def get_me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    roles_db = db.query(UserRole).filter(
+        UserRole.user_id == current_user.id
+    ).all()
+
+    roles = [role.role for role in roles_db]
+
+    profile_db = db.query(Profile).filter(
+        Profile.user_id == current_user.id
+    ).first()
 
     return UserResponse(
         id=current_user.id,
@@ -111,36 +179,77 @@ def get_me(current_user: User = Depends(get_current_user), db: Session = Depends
         profile=profile_db
     )
 
+
 @router.get("/role")
-def get_role(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    roles_db = db.query(UserRole).filter(UserRole.user_id == current_user.id).all()
-    roles = [r.role for r in roles_db]
+def get_role(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    roles_db = db.query(UserRole).filter(
+        UserRole.user_id == current_user.id
+    ).all()
+
+    roles = [role.role for role in roles_db]
     primary_role = roles[0] if roles else "citizen"
-    return {"role": primary_role}
+
+    return {
+        "role": primary_role
+    }
+
 
 @router.post("/reset-password")
-def reset_password(req: ResetPasswordRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == req.email).first()
+def reset_password(
+    req: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(
+        User.email == req.email
+    ).first()
+
     if not user:
-        # Por seguranca, nao revela se o email existe ou nao, mas retorna sucesso ficticio
-        return {"message": "Se o e-mail estiver cadastrado, um link de recuperação foi enviado."}
-    
-    # Simula o envio do link exibindo no console do servidor para facilidade de desenvolvimento
-    reset_token = create_access_token(data={"sub": user.id, "purpose": "reset-password"})
-    reset_link = f"http://localhost:8080/reset-password#type=recovery&access_token={reset_token}"
-    
-    print("\n" + "="*80)
+        # Por segurança, não revela se o e-mail existe ou não.
+        return {
+            "message": "Se o e-mail estiver cadastrado, um link de recuperação foi enviado."
+        }
+
+    # Simula o envio do link para facilitar o desenvolvimento.
+    reset_token = create_access_token(
+        data={
+            "sub": user.id,
+            "purpose": "reset-password"
+        }
+    )
+
+    reset_link = (
+        "http://localhost:8080/reset-password"
+        f"#type=recovery&access_token={reset_token}"
+    )
+
+    print("\n" + "=" * 80)
     print("MOCK E-MAIL DE RECUPERAÇÃO DE SENHA")
     print(f"Para: {user.email}")
     print(f"Link de Recuperação: {reset_link}")
-    print("="*80 + "\n")
-    
-    return {"message": "Se o e-mail estiver cadastrado, um link de recuperação foi enviado."}
+    print("=" * 80 + "\n")
+
+    return {
+        "message": "Se o e-mail estiver cadastrado, um link de recuperação foi enviado."
+    }
+
 
 @router.post("/update-password")
-def update_password(req: UpdatePasswordRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def update_password(
+    req: UpdatePasswordRequest,
+    current_user: User = Depends(
+        get_current_user_for_password_reset
+    ),
+    db: Session = Depends(get_db)
+):
     hashed_password = get_password_hash(req.password)
-    current_user.password_hash = hashed_password
-    db.commit()
-    return {"message": "Senha atualizada com sucesso!"}
 
+    current_user.password_hash = hashed_password
+
+    db.commit()
+
+    return {
+        "message": "Senha atualizada com sucesso!"
+    }
