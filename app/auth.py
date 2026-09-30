@@ -57,9 +57,49 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         detail="Credenciais inválidas ou token expirado",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    def get_current_user_for_password_reset(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> User:
+    token = credentials.credentials
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token de recuperação inválido ou expirado",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM]
+        )
+
         user_id: str = payload.get("sub")
+        purpose = payload.get("purpose")
+
+        if user_id is None or purpose != "reset-password":
+            raise credentials_exception
+
+    except jwt.PyJWTError:
+        raise credentials_exception
+
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if user is None:
+        raise credentials_exception
+
+    return user
+    try:
+       payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+
+# Tokens com finalidade específica, como recuperação de senha,
+# não devem ser aceitos como tokens normais de autenticação.
+if payload.get("purpose"):
+    raise credentials_exception
+
+user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
     except jwt.PyJWTError:
